@@ -1,21 +1,26 @@
+//
+//  ChatBubble.swift
+//
+
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
-// MARK: - カスタマイズ項目だけをまとめて宣言 ------------------------------
+// MARK: - カスタマイズ項目
 private enum BubbleTheme {
-    // 背景ティント (0〜1)
-    static let errorTintOpacity: Double = 0.45   // 赤っぽさ
-    static let toolTintOpacity:  Double = 0.25   // グレーっぽさ
-    static let userTintOpacity:  Double = 0.35   // 青っぽさ
+    static let errorTintOpacity: Double = 0.45
+    static let toolTintOpacity:  Double = 0.25
+    static let userTintOpacity:  Double = 0.35
 
-    // 文字色
-    static let errorTextColor: Color = .pink      // error
-    static let userTextColor:  Color = .gray     // user
-    static let textTextColor:  Color = .black    // text
-    static let defaultTextColor: Color = .white  // それ以外
+    static let errorTextColor: Color   = .pink
+    static let userTextColor:  Color   = .gray
+    static let textTextColor:  Color   = .black
+    static let defaultTextColor: Color = .white
 }
 
-// MARK: - MessageType ⇄ 見た目マッピング -------------------------------
-private extension MessageType {
+// MARK: - MessageType ⇄ 見た目
+extension MessageType {
     var tintColor: Color {
         switch self {
         case .error:         return .red
@@ -36,79 +41,117 @@ private extension MessageType {
     }
     var textColor: Color {
         switch self {
-        case .error:         return BubbleTheme.errorTextColor
-        case .user:          return BubbleTheme.userTextColor
-        case .text:          return BubbleTheme.textTextColor
-        default:             return BubbleTheme.defaultTextColor
+        case .error: return BubbleTheme.errorTextColor
+        case .user:  return BubbleTheme.userTextColor
+        case .text:  return BubbleTheme.textTextColor
+        default:     return BubbleTheme.defaultTextColor
         }
     }
 }
 
-// MARK: - ChatBubble ---------------------------------------------------------
+// MARK: - ChatBubble
 struct ChatBubble: View {
     let message: Message
     let zoomValue: CGFloat
-    // ── バブル出現用 ────────────────────────────
+    var isLightweight: Bool = false
+
     @State private var appear = false
-
-    // ── 背景アニメ用ステート ─────────────────────
-    @State private var angle: Double    = .random(in: 0..<360)
-    @State private var hue:   Double    = .random(in: 0..<360)
+    @State private var angle: Double = .random(in: 0..<360)
+    @State private var hue:   Double = .random(in: 0..<360)
     @State private var glowRadius: CGFloat = 6
-
-    private let baseGlowRadius:  CGFloat = 6
     private let pulseGlowRadius: CGFloat = 16
     @State private var hasStartedAnimations = false
 
     var body: some View {
         bubbleBody
-            .modifier(ScrollEffectModifier())
+            .modifier(ScrollEffectModifier(enabled: !isLightweight))
     }
 
-    // MARK: バブル本体 ------------------------------------------------------
+    @ViewBuilder
     private var bubbleBody: some View {
+        if isLightweight {
+            lightweightBubble
+        } else {
+            fullFXBubble
+        }
+    }
+
+    // 軽量版
+    private var lightweightBubble: some View {
         Text(message.text)
             .font(.system(size: 17 * zoomValue))
-            .foregroundColor(message.type.textColor)   // ← 文字色
+            .foregroundColor(message.type.textColor)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 8 * zoomValue)
             .padding(.horizontal, 12 * zoomValue)
-            .drawingGroup()   // GPU
+            .background(
+                RoundedRectangle(cornerRadius: 16 * zoomValue, style: .continuous)
+                    .fill(lightweightFill(for: message.type))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16 * zoomValue, style: .continuous)
+                    .stroke(lightweightStroke(for: message.type), lineWidth: 1 * zoomValue)
+            )
+            .animation(nil, value: appear)
+    }
 
-            // ── 背景レイヤ ───────────────────────
+    private func lightweightFill(for type: MessageType) -> Color {
+        switch type {
+        case .error: return Color.red.opacity(0.10)
+        case .user:  return Color.blue.opacity(0.08)
+        case .toolStart, .toolEnd: return Color.gray.opacity(0.08)
+        case .text:
+            #if os(macOS)
+            return Color(NSColor.windowBackgroundColor)
+            #else
+            return Color(.secondarySystemBackground)
+            #endif
+        }
+    }
+    private func lightweightStroke(for type: MessageType) -> Color {
+        switch type {
+        case .error: return .red.opacity(0.30)
+        case .user:  return .blue.opacity(0.25)
+        case .toolStart, .toolEnd: return .gray.opacity(0.25)
+        case .text:  return .gray.opacity(0.15)
+        }
+    }
+
+    // リッチ版
+    private var fullFXBubble: some View {
+        Text(message.text)
+            .font(.system(size: 17 * zoomValue))
+            .foregroundColor(message.type.textColor)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 8 * zoomValue)
+            .padding(.horizontal, 12 * zoomValue)
+            .drawingGroup()
             .background(
                 ZStack {
-                    // 1) ガラスフィル
+                    // 1 ガラス
                     RoundedRectangle(cornerRadius: 16 * zoomValue, style: .continuous)
                         .fill(.ultraThinMaterial)
-
-                    // 2) パステルに回転するグラデーション
+                    // 2 回転グラデ
                     colorfulGradientBackground
                         .mask(RoundedRectangle(cornerRadius: 16 * zoomValue, style: .continuous))
-
-                    // 2.5) "ほんの少しだけ" 色味を付与
+                    // 2.5 色味
                     RoundedRectangle(cornerRadius: 16 * zoomValue, style: .continuous)
                         .fill(message.type.tintColor.opacity(message.type.tintOpacity))
                         .blendMode(.overlay)
-
-                    // 3) パステル虹ボーダー
+                    // 3 虹ボーダー
                     pastelRainbowBorder(radius: 16 * zoomValue)
-
-                    // 4) 白縁
+                    // 4 白縁
                     whiteBorderOverlay(radius: 16 * zoomValue)
-
-                    // 5) 外周グロー
+                    // 5 外周グロー
                     outerGlowOverlay(radius: 16 * zoomValue)
                 }
             )
-
-            // ── バブル出現アニメ ─────────────────
             .scaleEffect(appear ? 1 : 0.5)
             .opacity(appear ? 1 : 0)
             .onAppear {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { appear = true }
-
                 if !hasStartedAnimations {
                     hasStartedAnimations = true
                     startAnimations()
@@ -116,20 +159,16 @@ struct ChatBubble: View {
             }
     }
 
-    // MARK: 背景・グローアニメ ---------------------------------------------
+    // アニメ
     private func startAnimations() {
-        withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) {
-            angle += 360
-        }
-        withAnimation(.linear(duration: 24).repeatForever(autoreverses: false)) {
-            hue += 360
-        }
+        withAnimation(.linear(duration: 12).repeatForever(autoreverses: false)) { angle += 360 }
+        withAnimation(.linear(duration: 24).repeatForever(autoreverses: false)) { hue += 360 }
         withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
             glowRadius = pulseGlowRadius * zoomValue
         }
     }
 
-    // MARK: レイヤーヘルパ ---------------------------------------------------
+    // 背景レイヤ
     private var colorfulGradientBackground: some View {
         GeometryReader { geo in
             let size = max(geo.size.width, geo.size.height) * 3
@@ -148,13 +187,11 @@ struct ChatBubble: View {
             .blur(radius: 90 * zoomValue)
         }
     }
-
     private func colorShift(_ offset: Double) -> Color {
         Color(hue: (hue + offset).truncatingRemainder(dividingBy: 360) / 360,
               saturation: 0.85,
               brightness: 1.0)
     }
-
     private func pastelRainbowBorder(radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .strokeBorder(
@@ -174,22 +211,17 @@ struct ChatBubble: View {
             )
             .blendMode(.screen)
     }
-
     private func whiteBorderOverlay(radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .stroke(Color.white.opacity(0.6), lineWidth: 1.0 * zoomValue)
             .blur(radius: 0.8 * zoomValue)
             .blendMode(.screen)
     }
-
     private func outerGlowOverlay(radius: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(Color.white.opacity(0.5))
             .shadow(
-                color: Color(hue: hue / 360,
-                             saturation: 0.8,
-                             brightness: 2.0,
-                             opacity: 0.9),
+                color: Color(hue: hue / 360, saturation: 0.8, brightness: 2.0, opacity: 0.9),
                 radius: glowRadius * zoomValue
             )
             .blendMode(.screen)
@@ -197,29 +229,31 @@ struct ChatBubble: View {
     }
 }
 
-// ───────────────────────────────────────────────────────────────
-// スクロール連動モディファイア（既存）
-// ───────────────────────────────────────────────────────────────
+// MARK: - スクロール連動（軽量対応）
 private struct ScrollEffectModifier: ViewModifier {
+    var enabled: Bool = true
     @State private var factor: CGFloat = 1.0
-
     func body(content: Content) -> some View {
-        content
-            .scaleEffect(0.5 + 0.5 * factor, anchor: .topLeading)
-            .opacity(factor)
-            .blur(radius: (1 - factor) * 2.0)
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .onReceive(Timer.publish(every: 0.016, on: .main, in: .common).autoconnect()) { _ in
-                            update(with: geo)
-                        }
-                }
-            )
-            .animation(.easeInOut(duration: 0.2), value: factor)
+        if enabled {
+            content
+                .scaleEffect(0.5 + 0.5 * factor, anchor: .topLeading)
+                .opacity(factor)
+                .blur(radius: (1 - factor) * 2.0)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onReceive(Timer.publish(every: 0.016, on: .main, in: .common).autoconnect()) { _ in
+                                update(with: geo)
+                            }
+                    }
+                )
+                .animation(.easeInOut(duration: 0.2), value: factor)
+        } else {
+            content
+        }
     }
-
     private func update(with geo: GeometryProxy) {
+        guard enabled else { return }
         let minY = geo.frame(in: .named("scroll")).minY
         #if os(macOS)
         let screenHeight = NSScreen.main?.frame.height ?? 800
