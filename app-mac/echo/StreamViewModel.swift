@@ -3,7 +3,7 @@ import Combine
 
 @MainActor
 final class StreamViewModel: ObservableObject {
-    var onMessage: ((String, String) -> Void)?             // 完成メッセージ用
+    var onMessage: ((String, String, ChatChunk.Usage?) -> Void)?             // 完成メッセージ用
 
     func send(_ msg: String) {
         Task.detached { [weak self] in
@@ -29,18 +29,19 @@ final class StreamViewModel: ObservableObject {
 
                     // ------ 3. トークン追加 ------
                     if let data = payload.data(using: .utf8),
-                       let chunk = try? JSONDecoder().decode(ChatChunk.self, from: data),
-                       let token = chunk.choices.first?.delta.content,
-                       let type = chunk.choices.first?.delta.type {
+                       let chunk = try? JSONDecoder().decode(ChatChunk.self, from: data) {
+                        let token = chunk.choices.first?.delta.content
+                        // 'type' may be nil for standard content chunks; default to "text"
+                        let msgType = chunk.choices.first?.delta.type ?? "text"
                         await MainActor.run {
-                            self.onMessage?(token, type)
+                            self.onMessage?(token ?? "", msgType, chunk.usage)
                         }
                     }
                 }
             } catch {
                 print("Error during SSE stream: \(error)")
                 await MainActor.run {
-                    self.onMessage?("[Error: \(error.localizedDescription)]", "error")
+                    self.onMessage?("[Error: \(error.localizedDescription)]", "error", nil)
                 }
             }
         }
@@ -48,7 +49,7 @@ final class StreamViewModel: ObservableObject {
 }
 
 /// ChatGPT-style chunk
-private struct ChatChunk: Decodable {
+struct ChatChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
             let role: String?
@@ -58,9 +59,15 @@ private struct ChatChunk: Decodable {
         let delta: Delta
         let index: Int // Assuming index is part of the Choice struct as per typical OpenAI format
     }
+    struct Usage: Decodable {
+        let promptTokens: Int
+        let completionTokens: Int
+        let totalTokens: Int
+    }
     let id: String
     let object: String
     let created: Int
     let model: String
     let choices: [Choice]
+    let usage: Usage?
 } 

@@ -456,6 +456,7 @@ class MCPClient {
             .map(tool => tool.name);
 
         try {
+            let totalUsage = null;
             writeLogFile("messages", this.messages, this.llm_configs?.enable_logging);
             const { textStream, response } = await streamText({
                 model: this.llm,
@@ -476,8 +477,8 @@ class MCPClient {
                     console.debug(`[MCP] step: toolCalls.length=${toolCalls.length}`),
 
                 // 最終テキストが丸ごと来たときも流す
-                onFinish: ({ text }) => {
-                    // 何もしない
+                onFinish: ({ usage }) => {
+                    totalUsage = usage; // capture usage stats
                 },
                 system: this.llm_configs?.system_prompt ?? "",
             });
@@ -503,7 +504,7 @@ class MCPClient {
             // 余りをまとめて送る
             if (buffer.length && !/^\s*$/.test(buffer)) {
                 console.log(`buffer, [${buffer}]`);
-                onToken?.(buffer, "text");
+                onToken?.(buffer, "text", totalUsage);
             }
 
             /* ── 会話履歴を更新 ─────────────────────────── */

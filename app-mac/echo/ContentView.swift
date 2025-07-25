@@ -83,6 +83,10 @@ struct ContentView: View {
     // 最小化制御
     @State private var isMinimized: Bool = false
     @State private var pulseToken: Int = 0
+    // トークン表示用
+    @State private var inputTokens: Int  = 0
+    @State private var outputTokens: Int = 0
+    @State private var showTokenOverlay: Bool = false
 
     // チャットメッセージ表示
     @ViewBuilder
@@ -118,7 +122,10 @@ struct ContentView: View {
                 },
                 isLightweightMode: $isLightweightMode,   // ←Binding渡し
                 isMinimized: $isMinimized,
-                pulseToken: $pulseToken
+                pulseToken: $pulseToken,
+                inputTokens: $inputTokens,
+                outputTokens: $outputTokens,
+                showTokenOverlay: $showTokenOverlay
             )
             .saturation(isMono ? 0 : 1)
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -183,27 +190,74 @@ struct ContentView: View {
                 AudioPlayerManager.shared.playSound(fileName: "success")
             }
             // ストリーム応答
-            streamVM.onMessage = { msg, rawType in
-                let mType = MessageType(rawValue: rawType) ?? .text
-                messages.append(Message(text: msg, type: mType))
-                if messages.count > MESSAGE_LIMIT {
-                    messages.removeFirst(messages.count - MESSAGE_LIMIT)
+            streamVM.onMessage = { msg, rawType, usage in
+                DispatchQueue.main.async {
+                    let mType = MessageType(rawValue: rawType) ?? .text
+                    let trimmed = msg.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        messages.append(Message(text: msg, type: mType))
+                    }
+                    if messages.count > MESSAGE_LIMIT {
+                        messages.removeFirst(messages.count - MESSAGE_LIMIT)
+                    }
+                    // トークン更新
+                    if let u = usage {
+                        inputTokens  = u.promptTokens
+                        outputTokens = u.completionTokens
+                        print("[DEBUG] Usage updated: inputTokens=\(inputTokens) outputTokens=\(outputTokens)")
+                    }
+
+                    switch mType {
+                    case .text:
+                        AudioPlayerManager.shared.playSound(fileName: "notification")
+                        let selectedVoiceId = UserDefaults.standard.string(forKey: "SelectedVoiceStyleId") ?? "1937616896"
+                        SpeechSpeakerViewModel.shared.speak(text: msg, id: selectedVoiceId)
+                    case .error:
+                        AudioPlayerManager.shared.playSound(fileName: "error")
+                    case .toolStart:
+                        AudioPlayerManager.shared.playSound(fileName: "alert")
+                    case .toolEnd:
+                        AudioPlayerManager.shared.playSound(fileName: "end")
+                    case .user: break
+                    }
+                    pulseToken &+= 1
                 }
-                switch mType {
-                case .text:
-                    AudioPlayerManager.shared.playSound(fileName: "notification")
-                    let selectedVoiceId = UserDefaults.standard.string(forKey: "SelectedVoiceStyleId") ?? "1937616896"
-                    SpeechSpeakerViewModel.shared.speak(text: msg, id: selectedVoiceId)
-                case .error:
-                    AudioPlayerManager.shared.playSound(fileName: "error")
-                case .toolStart:
-                    AudioPlayerManager.shared.playSound(fileName: "alert")
-                case .toolEnd:
-                    AudioPlayerManager.shared.playSound(fileName: "end")
-                case .user: break
-                }
-                pulseToken &+= 1
             }
+        }
+        // トークンオーバーレイ
+        .overlay(alignment: .topTrailing) {
+            if showTokenOverlay {
+                tokenCountOverlay
+                    .padding(.top, 8 * zoomScale)   // 位置をさらに上へ
+                    .padding(.trailing, 16 * zoomScale)
+            }
+        }
+    }
+
+    // トークン表示ビュー
+    private var tokenCountOverlay: some View {
+        let inStr  = formatTokens(inputTokens)
+        let outStr = formatTokens(outputTokens)
+        return Text("入力: \(inStr)、出力: \(outStr)")
+            .font(.system(size: 14 * zoomScale, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 8 * zoomScale)
+            .padding(.vertical, 4 * zoomScale)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8 * zoomScale, style: .continuous)
+                    .stroke(Color.white, lineWidth: 1.2)
+            )
+            .shadow(color: Color.black.opacity(0.8), radius: 4, x: 0, y: 2)
+        }
+
+    private func formatTokens(_ count: Int) -> String {
+        if count >= 10_000 {
+            let v = Double(count) / 10_000.0
+            return String(format: "%.1f万", v)
+        } else {
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            return f.string(from: NSNumber(value: count)) ?? "\(count)"
         }
     }
 

@@ -94,6 +94,12 @@ struct SpeechView: View {
     @Binding var isLightweightMode: Bool   // ←外部制御
     @Binding var isMinimized: Bool
     @Binding var pulseToken: Int
+    // トークン情報
+    @Binding var inputTokens: Int
+    @Binding var outputTokens: Int
+
+    // 表示切替（親で保持）
+    @Binding var showTokenOverlay: Bool
 
     @StateObject private var buffer = InputBuffer()
     @FocusState private var isEditing: Bool
@@ -480,6 +486,19 @@ struct SpeechView: View {
                     .background(Color.white.opacity(0.9))
                     .clipShape(Circle())
                     .foregroundColor(.blue)
+                    .shadow(radius: 4 * zoom)
+            }
+            .frame(width: 34 * zoom, height: 34 * zoom)
+            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            Button(action: { showTokenOverlay.toggle() }) {
+                Image(systemName: "list.number")
+                    .font(.system(size: 18 * zoom))
+                    .padding(6 * zoom)
+                    .background(Color.white.opacity(0.9))
+                    .clipShape(Circle())
+                    .foregroundColor(.black)
                     .shadow(radius: 4 * zoom)
             }
             .frame(width: 34 * zoom, height: 34 * zoom)

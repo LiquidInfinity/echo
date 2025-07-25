@@ -31,14 +31,18 @@ const server = http.createServer(async (req, res) => {
             res.write(`data: ${JSON.stringify({ ...meta, object: 'chat.completion.chunk', choices: [{ delta: { role: 'assistant' }, index: 0 }] })}\n\n`);
 
             try {
-                await client.processQueryStream(body, (token, type) => {
+                let totalUsage = null;
+                await client.processQueryStream(body, (token, type, usage) => {
                     if (token) {
                         const chunk = { ...meta, object: 'chat.completion.chunk', choices: [{ delta: { content: token, type: type }, index: 0 }] };
                         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
                     }
+                    if (usage) {
+                        totalUsage = usage; // capture usage stats for later
+                    }
                 });
 
-                res.write(`data: ${JSON.stringify({ ...meta, object: 'chat.completion.chunk', choices: [{ delta: {}, finish_reason: 'stop', index: 0 }] })}\n\n`);
+                res.write(`data: ${JSON.stringify({ ...meta, object: 'chat.completion.chunk', choices: [{ delta: {}, finish_reason: 'stop', index: 0 }], usage: totalUsage })}\n\n`);
                 res.write('data: [DONE]\n\n');
             } catch (error) {
                 console.error("[DEBUG] Error during processQueryStream or SSE writing:", error);

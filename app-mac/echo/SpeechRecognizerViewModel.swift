@@ -328,8 +328,8 @@ final class SpeechRecognizerViewModel: NSObject, ObservableObject, SFSpeechRecog
         recognitionRequest?.taskHint = .dictation
         recognitionRequest?.contextualStrings = [
             "オレ専用ポッドキャスト", "下にスクロール", "上にスクロール",
-            "Youtubeで", "進む", "戻る", "更新",
-            "番目をクリック", "番目にフォーカス", "ズームイン", "ズームアウト",
+            "Youtube", "開いてください", "スキップ", "違う", "もう一度", "進む", "戻る", "更新",
+            "登録チャンネル", "天気予報", "調べてください",
             confirmPhrase, cancelPhrase, readbackPhrase, exitPhrase
         ]
     }
